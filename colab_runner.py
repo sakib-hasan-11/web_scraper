@@ -4,6 +4,15 @@ Colab terminal-based runner for Website Intelligence Service.
 Accepts user URL input from terminal (no frontend, no server).
 Processes URLs directly and returns structured intelligence as JSON.
 
+Pipeline:
+  1. Validate + normalize URL
+  2. Crawl homepage
+  3. Extract + filter important internal links
+  4. Crawl important pages concurrently
+  5. Run all extractors over every page
+  6. Merge + deduplicate results
+  7. Return normalized JSON
+
 Usage:
     python colab_runner.py
 """
@@ -12,6 +21,7 @@ import asyncio
 import sys
 import json
 import logging
+import time
 from pathlib import Path
 
 # Setup logging
@@ -27,7 +37,6 @@ if sys.platform == "win32":
 
 # Import application modules
 from app.config import settings
-from app.schemas import AnalyzeRequest
 from app.utils import normalize_url, validate_url
 from app.crawler import crawl_page, crawl_pages
 from app.page_selector import extract_internal_links, filter_important_pages
@@ -39,79 +48,107 @@ async def analyze_website(url: str) -> dict:
     """
     Analyze a website and return structured intelligence.
 
+    Pipeline:
+      1. Validate + normalize URL
+      2. Crawl homepage
+      3. Extract + filter important internal links
+      4. Crawl important pages concurrently
+      5. Run all extractors over every page
+      6. Merge + deduplicate results
+      7. Return normalized JSON
+
     Args:
         url: The website URL to analyze
 
     Returns:
         Dictionary with extracted intelligence or error information
     """
+    start_ms = time.monotonic()
+
     try:
-        # Validate and normalize URL
-        url = normalize_url(url)
-        if not validate_url(url):
+        # ── Step 1: Validate URL ──────────────────────────────────────────
+        normalized = normalize_url(url)
+        is_valid, error_msg = validate_url(normalized)
+        if not is_valid:
+            logger.warning("Invalid URL submitted: %s — %s", url, error_msg)
             return {
                 "success": False,
-                "error": f"Invalid URL: {url}",
+                "error": "Invalid URL",
+                "details": error_msg,
                 "url": url,
             }
 
-        logger.info("Starting analysis for: %s", url)
+        logger.info("Starting analysis for: %s", normalized)
 
-        # Step 1: Crawl homepage
+        # ── Step 2: Crawl homepage ────────────────────────────────────────
         logger.info("Crawling homepage...")
-        homepage = await crawl_page(url)
+        homepage = await crawl_page(normalized, timeout=settings.timeout_seconds)
 
         if not homepage.success:
+            logger.error("Homepage crawl failed for %s: %s", normalized, homepage.error)
             return {
                 "success": False,
-                "error": f"Failed to crawl homepage: {homepage.error}",
-                "url": url,
+                "error": "Unable to crawl website",
+                "details": homepage.error,
+                "url": normalized,
             }
 
         logger.info("✓ Homepage crawled successfully")
 
-        # Step 2: Extract internal links
+        # ── Step 3: Find important pages ──────────────────────────────────
         logger.info("Extracting internal links...")
-        internal_links = extract_internal_links(homepage.html, url)
+        internal_links = extract_internal_links(homepage.html, normalized)
         logger.info("Found %d internal links", len(internal_links))
 
-        # Step 3: Filter to important pages
         logger.info("Filtering to important pages...")
-        important_pages = filter_important_pages(internal_links, limit=settings.page_limit)
-        logger.info("Selected %d important pages", len(important_pages))
+        important_urls = filter_important_pages(internal_links, max_pages=settings.max_pages)
+        logger.info("Found %d important page(s) to crawl", len(important_urls))
 
-        # Step 4: Crawl important pages
-        if important_pages:
-            logger.info("Crawling %d important pages...", len(important_pages))
-            crawled_pages = await crawl_pages(important_pages)
-            all_pages = [homepage] + crawled_pages
-            logger.info("✓ Crawled %d pages total", len(all_pages))
-        else:
-            logger.info("No additional pages to crawl")
-            all_pages = [homepage]
+        # ── Step 4: Crawl important pages ─────────────────────────────────
+        additional_pages = await crawl_pages(
+            important_urls,
+            concurrency=settings.concurrency,
+            timeout=settings.timeout_seconds,
+        )
 
-        # Step 5: Extract data from all pages
+        all_pages = [homepage] + additional_pages
+        pages_scanned = sum(1 for p in all_pages if p.success)
+        logger.info("✓ Crawled %d pages total (%d successful)", len(all_pages), pages_scanned)
+
+        # ── Step 5: Extract data ──────────────────────────────────────────
         logger.info("Extracting structured data from pages...")
-        extractions = extract_from_pages(all_pages, url)
-        logger.info("✓ Extracted data from %d pages", len(extractions))
+        page_results = extract_from_pages(all_pages)
+        logger.info("✓ Extracted data from %d page(s)", len(page_results))
 
-        # Step 6: Merge and deduplicate
+        # ── Step 6: Merge results ─────────────────────────────────────────
         logger.info("Merging and deduplicating results...")
-        result = merge(extractions, url)
-        logger.info("✓ Analysis complete")
+        crawl_time_ms = int((time.monotonic() - start_ms) * 1000)
+        response = merge(
+            website_url=normalized,
+            page_results=page_results,
+            pages_scanned=pages_scanned,
+            crawl_time_ms=crawl_time_ms,
+        )
+
+        logger.info(
+            "Analysis complete for %s — %d page(s) in %dms",
+            normalized, pages_scanned, crawl_time_ms,
+        )
 
         return {
             "success": True,
-            "url": url,
-            "pages_analyzed": len(all_pages),
-            "data": result,
+            "url": normalized,
+            "pages_scanned": pages_scanned,
+            "crawl_time_ms": crawl_time_ms,
+            "data": response,
         }
 
     except Exception as exc:
         logger.error("Analysis failed: %s", str(exc), exc_info=True)
         return {
             "success": False,
-            "error": f"Analysis failed: {str(exc)}",
+            "error": "Analysis failed",
+            "details": str(exc),
             "url": url,
         }
 
@@ -143,11 +180,19 @@ async def main():
             print("\n" + "-" * 70)
             if result["success"]:
                 print(f"✅ Analysis successful for: {result['url']}")
-                print(f"📊 Pages analyzed: {result['pages_analyzed']}")
+                print(f"📊 Pages scanned: {result['pages_scanned']}")
+                print(f"⏱️  Crawl time: {result['crawl_time_ms']}ms")
                 print("\n📋 Extracted Data:")
-                print(json.dumps(result["data"], indent=2))
+                # Convert response object to dict if needed
+                data = result["data"]
+                if hasattr(data, "model_dump"):
+                    data = data.model_dump()
+                print(json.dumps(data, indent=2, default=str))
             else:
-                print(f"❌ Analysis failed: {result['error']}")
+                print(f"❌ Analysis failed")
+                print(f"   Error: {result.get('error', 'Unknown error')}")
+                if "details" in result:
+                    print(f"   Details: {result['details']}")
             print("-" * 70 + "\n")
 
         except KeyboardInterrupt:
@@ -155,12 +200,12 @@ async def main():
             sys.exit(0)
         except Exception as exc:
             print(f"\n❌ Error: {str(exc)}\n")
-            logger.exception("Unexpected error")
+            logger.exception("Unexpected error in main loop")
 
 
 if __name__ == "__main__":
     print("\n🚀 Starting Website Intelligence Service...")
-    print(f"✓ FastAPI {settings.app_name} v{settings.app_version}\n")
+    print(f"✓ {settings.app_name} v{settings.app_version}\n")
 
     try:
         asyncio.run(main())
@@ -169,4 +214,5 @@ if __name__ == "__main__":
         sys.exit(0)
     except Exception as exc:
         logger.error("Fatal error: %s", str(exc), exc_info=True)
+        print(f"\n❌ Fatal error: {str(exc)}\n")
         sys.exit(1)
