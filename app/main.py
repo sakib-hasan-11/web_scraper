@@ -8,6 +8,14 @@ Endpoints:
   GET  /          — serve the frontend UI
 """
 
+# Windows fix: Playwright requires ProactorEventLoop to launch browser subprocesses.
+# SelectorEventLoop (Windows default) raises NotImplementedError on subprocess_exec.
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 import logging
 import time
 from contextlib import asynccontextmanager

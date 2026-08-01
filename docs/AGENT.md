@@ -1,5 +1,3 @@
-# AGENT.md
-
 # Website Intelligence Service — AI Coding Agent Rules
 
 ## Project Goal
@@ -152,7 +150,7 @@ Never put business logic inside FastAPI endpoints.
 
 Always use:
 
-* Python 3.11
+* Python 3.11,.venv(never global),uv
 * Type hints
 * Pydantic models
 * Async functions where appropriate
