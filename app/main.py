@@ -175,7 +175,8 @@ async def analyze(request: AnalyzeRequest):
 
     # ── Step 5: Extract evidence from each page ───────────────────────────
     logger.info("Extracting evidence from %d crawled page(s)...", len(all_pages))
-    aggregator = EvidenceAggregator(normalized)
+    aggregator = EvidenceAggregator(normalized, debug_mode=request.debug)
+    extraction_start = time.monotonic()
 
     for page in all_pages:
         extractor = PageEvidenceExtractor(page)
@@ -185,7 +186,12 @@ async def analyze(request: AnalyzeRequest):
 
     # ── Step 6: Build response ────────────────────────────────────────────
     crawl_time_ms = int((time.monotonic() - start_ms) * 1000)
+    extraction_time_ms = int((time.monotonic() - extraction_start) * 1000)
     response = aggregator.build_response(crawl_time_ms)
+    
+    # Add extraction time to debug if enabled
+    if request.debug:
+        response.crawl.extraction_time_ms = extraction_time_ms
 
     logger.info(
         "Evidence collection complete for %s — %d page(s) extracted in %dms",

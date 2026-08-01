@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     # Crawling
     max_pages: int = 6  # MVP: Only crawl 6 pages max (homepage + 5 important pages)
     concurrency: int = 5
-    timeout_seconds: int = 15
+    timeout_seconds: int = 12  # Reduced from 15 to 12 for faster crawling
+    
+    # Debug mode
+    debug_mode: bool = False  # Set to True to include timing/diagnostics
 
     # App metadata
     app_name: str = "Website Intelligence Service"

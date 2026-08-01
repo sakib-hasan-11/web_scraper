@@ -9,6 +9,7 @@ class AnalyzeRequest(BaseModel):
     """Request body for POST /analyze."""
 
     url: str
+    debug: bool = False  # Optional: include timing/diagnostics in response
 
     @field_validator("url")
     @classmethod

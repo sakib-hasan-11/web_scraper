@@ -53,6 +53,37 @@ class PageEvidenceExtractor:
         self.html = page.html
         self.soup = BeautifulSoup(page.html, "lxml") if page.html else None
 
+    def _get_importance_score(self, content_type: str, is_main_page: bool = False) -> int:
+        """Calculate importance score for different content types."""
+        # Importance scoring (1-10 scale)
+        # 10 = critical business info
+        # 7-9 = high value
+        # 5-6 = medium value
+        # 1-4 = low value
+        
+        if content_type == "email":
+            return 10 if is_main_page else 8  # Contact emails are critical
+        elif content_type == "phone":
+            return 10 if is_main_page else 8  # Phone numbers are critical
+        elif content_type == "business_heading":
+            return 9  # Business titles/service names
+        elif content_type == "service":
+            return 9  # Service descriptions
+        elif content_type == "address":
+            return 10  # Location info is critical
+        elif content_type == "opening_hours":
+            return 8  # Opening hours are useful
+        elif content_type == "form":
+            return 7  # Contact/booking forms
+        elif content_type == "team_member":
+            return 8  # Team/staff info
+        elif content_type == "social_link":
+            return 6  # Social profiles
+        elif content_type == "general_paragraph":
+            return 5  # General content
+        else:
+            return 5  # Default
+
     def extract(self) -> Optional[PageEvidence]:
         """
         Extract all evidence from page.
@@ -352,6 +383,7 @@ class PageEvidenceExtractor:
                     method=method,
                     source=self.url,
                     confidence=confidence,
+                    importance=10,  # Critical contact info
                 )
             )
 
@@ -380,6 +412,7 @@ class PageEvidenceExtractor:
                     method=method,
                     source=self.url,
                     confidence=confidence,
+                    importance=10,  # Critical contact info
                 )
             )
 
@@ -474,7 +507,33 @@ class PageEvidenceExtractor:
         """Build FormEvidence from form element."""
         action = form.get("action", "")
         method = form.get("method", "POST").upper()
-        inputs = [inp.get("name", "") for inp in form.find_all(["input", "textarea", "select"]) if inp.get("name")]
+        
+        # Only extract user-visible input fields
+        user_visible_fields = []
+        hidden_patterns = {
+            "__", "csrf", "nonce", "token", "signature", "hmac", "_wpnonce",
+            "recaptcha", "g-recaptcha", "captcha", "honeypot", "tracking",
+            "_hidden", "_token", "_id", "_key", "hash", "time", "action",
+        }
+        
+        for inp in form.find_all(["input", "textarea", "select"]):
+            field_name = inp.get("name", "").lower()
+            field_type = inp.get("type", "").lower()
+            
+            # Skip hidden types explicitly
+            if field_type == "hidden":
+                continue
+            
+            # Skip system/tracking fields
+            if any(pattern in field_name for pattern in hidden_patterns):
+                continue
+            
+            # Skip empty names
+            if not field_name:
+                continue
+            
+            user_visible_fields.append(inp.get("name", ""))
+        
         button = ""
         for btn in form.find_all(["button", "input[type=submit]"]):
             if btn.get("value"):
@@ -485,7 +544,7 @@ class PageEvidenceExtractor:
         return FormEvidence(
             action=urljoin(self.url, action) if action else self.url,
             method=method,
-            input_names=inputs,
+            input_names=user_visible_fields,
             button_text=button,
             source=self.url,
         )
@@ -576,15 +635,29 @@ class PageEvidenceExtractor:
         evidence = []
 
         for category, techs in scripts.items():
-            for tech in techs:
-                evidence.append(
-                    ScriptEvidence(
-                        name=tech,
-                        category=category,
-                        confidence=0.85,
-                        source=self.url,
+            # Handle cms field (string) vs others (lists)
+            if isinstance(techs, str):
+                if techs:  # Only if non-empty
+                    evidence.append(
+                        ScriptEvidence(
+                            name=techs,
+                            category=category,
+                            confidence=0.85,
+                            source=self.url,
+                        )
                     )
-                )
+            else:
+                # techs is a list
+                for tech in techs:
+                    if tech:  # Only if non-empty
+                        evidence.append(
+                            ScriptEvidence(
+                                name=tech,
+                                category=category,
+                                confidence=0.85,
+                                source=self.url,
+                            )
+                        )
 
         return evidence
 
@@ -671,7 +744,7 @@ class PageEvidenceExtractor:
         Detect page type from URL and content (deterministic only).
 
         Returns:
-            Page type string (homepage|about|contact|services|team|pricing|locations|faq|booking|unknown)
+            Page type string (homepage|about|contact|services|team|team_profile|pricing|locations|faq|booking|unknown)
         """
         from urllib.parse import urlparse
         
@@ -688,7 +761,28 @@ class PageEvidenceExtractor:
         if url_lower.endswith("index.html"):
             return "homepage"
 
-        # URL-based detection
+        # Extract page title for content-based detection
+        title_lower = ""
+        meta_desc_lower = ""
+        if self.soup:
+            title_tag = self.soup.find("title")
+            if title_tag:
+                title_lower = title_tag.get_text().lower()
+            
+            meta_desc = self.soup.find("meta", attrs={"name": "description"})
+            if meta_desc and meta_desc.get("content"):
+                meta_desc_lower = meta_desc["content"].lower()
+
+        # Team profile detection (individual person/doctor page)
+        # Check for deep team paths like /team/person or /about/team/name
+        if any(x in url_lower for x in ["/team/", "/about/team/", "/meet-the-team/", "/our-team/", "/staff/"]):
+            # If path has more than 2 segments after domain, it's likely a person
+            path_parts = [p for p in path.split("/") if p]
+            if len(path_parts) >= 2:
+                # Deep path = team profile (e.g., /team/john-smith)
+                return "team_profile"
+        
+        # URL-based detection for main page types
         type_keywords = {
             "about": ["about", "who-we-are", "our-story", "company"],
             "contact": ["contact", "contact-us", "get-in-touch"],
@@ -705,9 +799,8 @@ class PageEvidenceExtractor:
                 if keyword in url_lower:
                     return page_type
 
-        # Content-based detection (last resort)
-        page_text = self.soup.get_text().lower()
-
+        # Content-based detection for FAQ
+        page_text = self.soup.get_text().lower() if self.soup else ""
         if "faq" in page_text and page_text.count("q:") + page_text.count("question") > 5:
             return "faq"
 

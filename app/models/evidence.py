@@ -26,6 +26,8 @@ class EvidenceItem(BaseModel):
     source: str = Field(description="Page URL where evidence was found")
     method: str = Field(description="Extraction method (e.g., 'mailto', 'tel', 'visible', 'schema', 'regex')")
     confidence: float = Field(description="0.0-1.0 confidence score")
+    importance: int = Field(default=5, description="Importance score 1-10 (1=low, 10=critical)")
+
 
 
 class HeadingEvidence(BaseModel):
@@ -86,6 +88,7 @@ class ScriptEvidence(BaseModel):
     name: str = Field(description="Script name (e.g., 'Google Analytics', 'Intercom')")
     category: str = Field(description="cms|framework|analytics|marketing|chat|booking|crm|payment|other")
     confidence: float = Field(default=0.9)
+    importance: int = Field(default=7, description="Importance score 1-10")
     source: str = Field(default="", description="Page URL")
 
 
@@ -164,6 +167,12 @@ class CrawlMetadata(BaseModel):
     pages_extracted: int = Field(description="Pages with successful extraction")
     crawl_time_ms: int = Field(description="Total crawl time in milliseconds")
     discovery_method: str = Field(default="", description="how pages were discovered")
+    
+    # Debug mode fields
+    crawled_urls: list[str] = Field(default_factory=list, description="URLs that were crawled (debug mode only)")
+    extraction_time_ms: int = Field(default=0, description="Time spent on extraction (debug mode)")
+    aggregation_time_ms: int = Field(default=0, description="Time spent on aggregation (debug mode)")
+
 
 
 class WebsiteEvidence(BaseModel):
@@ -177,6 +186,7 @@ class WebsiteEvidence(BaseModel):
     contact: Optional[PageEvidence] = None
     services: Optional[PageEvidence] = None
     team: Optional[PageEvidence] = None
+    team_profiles: list[PageEvidence] = Field(default_factory=list, description="Individual team member/doctor profiles")
     pricing: Optional[PageEvidence] = None
     locations: Optional[PageEvidence] = None
     faq: Optional[PageEvidence] = None

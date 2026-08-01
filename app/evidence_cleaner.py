@@ -140,6 +140,14 @@ class EvidenceCleaner:
         if response.team:
             response.team = self._clean_page(response.team, "team")
 
+        # Clean team profiles
+        cleaned_team_profiles = []
+        for profile in response.team_profiles:
+            cleaned = self._clean_page(profile, "team_profile")
+            if cleaned and self._has_meaningful_content(cleaned):
+                cleaned_team_profiles.append(cleaned)
+        response.team_profiles = cleaned_team_profiles
+
         if response.pricing:
             response.pricing = self._clean_page(response.pricing, "pricing")
 
@@ -211,6 +219,7 @@ class EvidenceCleaner:
         page.social_links = self._clean_social_links(page.social_links)
         page.whatsapp_links = self._clean_evidence_items(page.whatsapp_links)
         page.calendar_links = self._clean_evidence_items(page.calendar_links)
+        page.navigation_links = self._clean_navigation_links(page.navigation_links)
 
         # Remove footer evidence (now global)
         page.footer_emails = []
@@ -232,31 +241,57 @@ class EvidenceCleaner:
     # ────────────────────────────────────────────────────────────────────
 
     def _clean_headings(self, headings: list[HeadingEvidence]) -> list[HeadingEvidence]:
-        """Remove boilerplate, duplicates, limit to 20."""
+        """Remove boilerplate, duplicates, limit to 15. Keep only business headings."""
+        # Navigation/UI headings to remove
+        ui_headings = {
+            "follow us", "menu", "sitemap", "get in touch", "contact details",
+            "opening hours", "follow", "share", "newsletter", "subscribe",
+            "back to top", "cookie", "privacy", "terms", "legal", "contact us",
+        }
+        
         cleaned = []
 
-        for heading in headings[:20]:  # Limit to 20
+        for heading in headings[:20]:  # Process first 20
             text = heading.text.lower()
 
-            # Skip boilerplate
+            # Skip boilerplate keywords
             if any(keyword in text for keyword in BOILERPLATE_KEYWORDS):
+                continue
+            
+            # Skip UI/navigation headings
+            if any(ui in text for ui in ui_headings):
                 continue
 
             # Skip duplicates
             if text in self.seen_headings:
                 continue
 
+            # Only keep if text is meaningful (>2 chars, not just single word/number)
             if heading.text and len(heading.text) > 2:
                 self.seen_headings.add(text)
                 cleaned.append(heading)
+                
+                # Stop at 15 business headings
+                if len(cleaned) >= 15:
+                    break
 
         return cleaned
 
     def _clean_paragraphs(self, paragraphs: list[ParagraphEvidence]) -> list[ParagraphEvidence]:
-        """Remove boilerplate, duplicates, limit to 10, enforce 50-800 chars."""
+        """Remove boilerplate, duplicates, limit to 8. Keep only meaningful business content."""
+        # Topics to discard (not business-relevant)
+        discard_phrases = {
+            "accessibility", "wcag", "screen reader", "keyboard navigation",
+            "cookie", "tracking", "marketing cookie", "consent management",
+            "privacy notice", "privacy policy", "terms of service", "terms of use",
+            "cookie policy", "legal notice", "disclaimer", "copyright",
+            "all rights reserved", "unsubscribe", "opt-out", "do not sell",
+            "gdpr", "ccpa", "data protection", "visitor agreement",
+        }
+        
         cleaned = []
 
-        for para in paragraphs[:30]:  # Process first 30
+        for para in paragraphs[:40]:  # Process first 40
             text = para.text
             text_lower = text.lower()
 
@@ -264,8 +299,12 @@ class EvidenceCleaner:
             if len(text) < 50 or len(text) > 800:
                 continue
 
-            # Skip boilerplate
+            # Skip boilerplate keywords
             if any(keyword in text_lower for keyword in BOILERPLATE_KEYWORDS):
+                continue
+            
+            # Skip non-business content
+            if any(phrase in text_lower for phrase in discard_phrases):
                 continue
 
             # Skip duplicates
@@ -275,7 +314,7 @@ class EvidenceCleaner:
             self.seen_paragraphs.add(text_lower)
             cleaned.append(para)
 
-            if len(cleaned) >= 10:  # Limit to 10
+            if len(cleaned) >= 8:  # Limit to 8 meaningful paragraphs
                 break
 
         return cleaned
@@ -425,6 +464,40 @@ class EvidenceCleaner:
 
         return cleaned
 
+    def _clean_navigation_links(self, links: list[str]) -> list[str]:
+        """Filter navigation links - keep only business-relevant."""
+        # Useful navigation
+        keep_keywords = {
+            "about", "services", "treatments", "pricing", "contact", "team",
+            "emergency", "book", "appointment", "locations", "faq", "blog",
+            "resources", "gallery", "portfolio", "products", "solutions",
+            "features", "why-us", "testimonials", "case-studies", "careers",
+        }
+        
+        # Skip navigation
+        skip_keywords = {
+            "privacy", "terms", "cookie", "cookies", "complaints", "accessibility",
+            "rss", "author", "category", "archive", "tag", "sitemap", "legal",
+            "disclaimer", "security", "consent", "gdpr", "ccpa", "unsubscribe",
+        }
+        
+        cleaned = []
+        for link in links:
+            if not link:
+                continue
+            
+            link_lower = link.lower()
+            
+            # Check if explicitly skipped
+            if any(skip in link_lower for skip in skip_keywords):
+                continue
+            
+            # Keep if it matches useful keywords or looks like a main page link
+            if any(keyword in link_lower for keyword in keep_keywords):
+                cleaned.append(link)
+        
+        return cleaned
+
     def _clean_evidence_items(self, items: list[EvidenceItem]) -> list[EvidenceItem]:
         """Generic cleaning for evidence items."""
         cleaned = []
@@ -490,7 +563,10 @@ class EvidenceCleaner:
         tech = {}
 
         # Collect from all pages
-        for page in [response.homepage, response.about, response.contact, response.services, response.team]:
+        all_pages = [response.homepage, response.about, response.contact, response.services, response.team]
+        all_pages.extend(response.team_profiles)  # Include team profiles
+        
+        for page in all_pages:
             if page and page.scripts:
                 for script in page.scripts:
                     key = f"{script.category}:{script.name}".lower()
