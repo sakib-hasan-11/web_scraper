@@ -1,0 +1,170 @@
+"""
+Website Intelligence Service — FastAPI application entry point.
+
+Endpoints:
+  POST /analyze   — analyze a website and return structured JSON
+  GET  /health    — health check
+  GET  /version   — application version
+  GET  /          — serve the frontend UI
+"""
+
+import logging
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from app.config import settings
+from app.schemas import AnalyzeRequest, ErrorResponse
+from app.utils import normalize_url, validate_url
+from app.crawler import crawl_page, crawl_pages
+from app.page_selector import extract_internal_links, filter_important_pages
+from app.extractor import extract_from_pages
+from app.merger import merge
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# App setup
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Starting %s v%s", settings.app_name, settings.app_version)
+    yield
+    logger.info("Shutting down %s", settings.app_name)
+
+
+app = FastAPI(
+    title=settings.app_name,
+    version=settings.app_version,
+    description="Accepts a website URL and returns structured business intelligence as JSON.",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve frontend
+_frontend_dir = Path(__file__).parent.parent / "frontend"
+if _frontend_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(_frontend_dir)), name="static")
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.get("/health", tags=["Meta"])
+async def health() -> dict:
+    """Health check endpoint."""
+    return {"status": "ok"}
+
+
+@app.get("/version", tags=["Meta"])
+async def version() -> dict:
+    """Return the application version."""
+    return {"version": settings.app_version}
+
+
+@app.get("/", response_class=HTMLResponse, tags=["Meta"], include_in_schema=False)
+async def index():
+    """Serve the frontend UI."""
+    index_path = _frontend_dir / "index.html"
+    if index_path.exists():
+        return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        content="<h1>Website Intelligence Service</h1><p>Frontend not found.</p>"
+    )
+
+
+@app.post("/analyze", tags=["Intelligence"])
+async def analyze(request: AnalyzeRequest):
+    """
+    Analyze a website and return structured business intelligence.
+
+    Pipeline:
+      1. Validate + normalize URL
+      2. Crawl homepage
+      3. Extract + filter important internal links
+      4. Crawl important pages concurrently
+      5. Run all extractors over every page
+      6. Merge + deduplicate results
+      7. Return normalized JSON
+    """
+    start_ms = time.monotonic()
+
+    # ── Step 1: Validate URL ──────────────────────────────────────────────
+    normalized = normalize_url(request.url)
+    is_valid, error_msg = validate_url(normalized)
+    if not is_valid:
+        logger.warning("Invalid URL submitted: %s — %s", request.url, error_msg)
+        return JSONResponse(
+            status_code=422,
+            content=ErrorResponse(error="Invalid URL", details=error_msg).model_dump(),
+        )
+
+    logger.info("Starting analysis for: %s", normalized)
+
+    # ── Step 2: Crawl homepage ─────────────────────────────────────────────
+    homepage = await crawl_page(normalized, timeout=settings.timeout_seconds)
+    if not homepage.success:
+        logger.error("Homepage crawl failed for %s: %s", normalized, homepage.error)
+        return JSONResponse(
+            status_code=502,
+            content=ErrorResponse(
+                error="Unable to crawl website",
+                details=homepage.error,
+            ).model_dump(),
+        )
+
+    # ── Step 3: Find important pages ──────────────────────────────────────
+    internal_links = extract_internal_links(homepage.html, normalized)
+    important_urls = filter_important_pages(internal_links, max_pages=settings.max_pages)
+    logger.info("Found %d important page(s) to crawl", len(important_urls))
+
+    # ── Step 4: Crawl important pages ─────────────────────────────────────
+    additional_pages = await crawl_pages(
+        important_urls,
+        concurrency=settings.concurrency,
+        timeout=settings.timeout_seconds,
+    )
+
+    all_pages = [homepage] + additional_pages
+    pages_scanned = sum(1 for p in all_pages if p.success)
+
+    # ── Step 5: Extract data ──────────────────────────────────────────────
+    page_results = extract_from_pages(all_pages)
+
+    # ── Step 6: Merge results ─────────────────────────────────────────────
+    crawl_time_ms = int((time.monotonic() - start_ms) * 1000)
+    response = merge(
+        website_url=normalized,
+        page_results=page_results,
+        pages_scanned=pages_scanned,
+        crawl_time_ms=crawl_time_ms,
+    )
+
+    logger.info(
+        "Analysis complete for %s — %d page(s) in %dms",
+        normalized, pages_scanned, crawl_time_ms,
+    )
+
+    return response

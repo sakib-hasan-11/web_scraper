@@ -1,0 +1,31 @@
+# Web Framework
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+
+# Crawler
+crawl4ai==0.3.74
+
+# HTML Parsing
+beautifulsoup4==4.12.3
+lxml==5.2.2
+trafilatura==1.12.1
+
+# HTTP
+httpx==0.27.0
+
+# URL Utilities
+tldextract==5.1.2
+
+# Data Validation
+pydantic==2.7.4
+pydantic-settings==2.3.3
+
+# Structured Data Extraction
+extruct==0.17.0
+
+# Contact Extraction
+phonenumbers==8.13.39
+email-validator==2.2.0
+
+# JSON
+orjson==3.10.5
