@@ -2,9 +2,12 @@
 Pydantic response models for the Website Intelligence API.
 
 These models define the exact shape of the JSON returned by POST /analyze.
+
+Phase 4: Business-centric schema with summary, presence, capabilities, discovery.
 """
 
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 
 class CompanyInfo(BaseModel):
@@ -75,16 +78,82 @@ class CrawlMeta(BaseModel):
     crawl_time_ms: int = 0
 
 
-class WebsiteIntelligenceResponse(BaseModel):
-    """Full response returned by POST /analyze."""
+class SummaryMetrics(BaseModel):
+    """Phase 4: High-level business summary."""
 
-    website: str
-    company: CompanyInfo = Field(default_factory=CompanyInfo)
-    contact: ContactInfo = Field(default_factory=ContactInfo)
-    social: SocialLinks = Field(default_factory=SocialLinks)
+    business_name: str = ""
+    tagline: str = ""
+    primary_industry: str = ""
+    contact_methods_found: int = 0  # Number of unique email/phone
+    locations_count: int = 1
+    key_features: list[str] = Field(default_factory=list)  # Top 3-5 capabilities
+    data_quality_score: float = 0.0  # 0.0-1.0, avg confidence
+    team_size_estimated: int = 0  # Count of extracted team members
+
+
+class VerifiedContact(BaseModel):
+    """A contact method with validation and confidence."""
+
+    value: str
+    confidence: float = 0.0  # 0.0-1.0
+    source: str = ""  # "mailto", "tel", "form", etc.
+    type: str = ""  # "email" or "phone"
+
+
+class VerifiedAddress(BaseModel):
+    """A verified business address."""
+
+    value: str
+    confidence: float = 0.0
+    source: str = ""
+    is_primary: bool = False
+
+
+class PresenceInfo(BaseModel):
+    """Phase 4: Online presence and verified contacts."""
+
+    website_url: str = ""
+    verified_contacts: list[VerifiedContact] = Field(default_factory=list)
+    addresses: list[VerifiedAddress] = Field(default_factory=list)
+    social_profiles: dict[str, str] = Field(default_factory=dict)  # {platform: url}
+
+
+class CapabilityStack(BaseModel):
+    """Phase 4: What the business can do / has."""
+
     services: list[str] = Field(default_factory=list)
+    features: "FeatureFlags" = Field(default_factory=lambda: FeatureFlags())
     technology: TechnologyStack = Field(default_factory=TechnologyStack)
-    seo: SEOInfo = Field(default_factory=SEOInfo)
-    pages: PagesFound = Field(default_factory=PagesFound)
-    features: FeatureFlags = Field(default_factory=FeatureFlags)
-    crawl: CrawlMeta = Field(default_factory=CrawlMeta)
+    team_members: list[str] = Field(default_factory=list)  # Names of extracted team
+
+
+class DiscoveryMetadata(BaseModel):
+    """Phase 4: How and when data was discovered."""
+
+    pages_crawled: list[str] = Field(default_factory=list)  # URLs of pages crawled
+    crawl_time_ms: int = 0
+    last_updated: datetime = Field(default_factory=datetime.now)
+    confidence_summary: dict[str, float] = Field(
+        default_factory=dict
+    )  # {data_type: avg_confidence}
+    data_sources: dict[str, list[str]] = Field(
+        default_factory=dict
+    )  # {data_type: [page_urls_where_found]}
+
+
+class WebsiteIntelligenceResponse(BaseModel):
+    """
+    Full response returned by POST /analyze.
+    
+    Phase 4: Business-centric structure with:
+    - summary: Key metrics about the business
+    - presence: Online presence and contact info
+    - capabilities: What the business offers
+    - discovery: How data was found
+    """
+
+    # Phase 4: Business-centric sections
+    summary: SummaryMetrics = Field(default_factory=SummaryMetrics)
+    presence: PresenceInfo = Field(default_factory=PresenceInfo)
+    capabilities: CapabilityStack = Field(default_factory=CapabilityStack)
+    discovery: DiscoveryMetadata = Field(default_factory=DiscoveryMetadata)
