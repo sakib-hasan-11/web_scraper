@@ -28,6 +28,7 @@ class PageScore:
 
 
 # Page type scoring (higher = more important)
+# Negative scores = pages to skip entirely
 PAGE_TYPE_SCORES = {
     "contact": 100,
     "about": 95,
@@ -39,15 +40,17 @@ PAGE_TYPE_SCORES = {
     "solutions": 75,
     "products": 70,
     "careers": 40,
-    "blog": -50,
-    "news": -50,
-    "press": -50,
-    "privacy": -100,
-    "terms": -100,
-    "legal": -100,
-    "cookie": -100,
-    "sitemap": -100,
-    "robots": -100,
+    "faq": 60,
+    "blog": -100,        # Never crawl blogs
+    "news": -100,        # Never crawl news
+    "posts": -100,       # Never crawl posts
+    "press": -100,       # Never crawl press
+    "privacy": -200,     # Never crawl legal pages
+    "terms": -200,
+    "legal": -200,
+    "cookie": -200,
+    "sitemap": -200,
+    "robots": -200,
 }
 
 # Keywords for each page type
@@ -161,14 +164,18 @@ def score_page(url: str) -> PageScore:
     if type_confidence < 0.6:
         base_score *= 0.5
 
-    # Normalize to 0-100 range
-    normalized_score = max(0, min(100, base_score + 50))
+    # For negative scores (pages to skip), keep them negative
+    if base_score < 0:
+        final_score = base_score
+    else:
+        # Normalize positive scores to 0-100 range
+        final_score = max(0, min(100, base_score))
 
     reason = f"Page type: {page_type} (confidence: {type_confidence:.0%})"
 
     return PageScore(
         url=url,
-        score=normalized_score,
+        score=final_score,
         page_type=page_type,
         reason=reason,
     )

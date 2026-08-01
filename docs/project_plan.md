@@ -1,188 +1,155 @@
-# Website Intelligence Service V2 — Implementation Prompt
+# Website Intelligence Service V2.1 — Data Quality & Performance Improvements
 
-You are a Senior Python Software Engineer, Solution Architect, and Web Intelligence Engineer.
+You are continuing development on an existing Website Intelligence Service.
 
-Your task is to extend the existing Website Intelligence Service (FastAPI + Crawl4AI) into Version 2.
-
-This project is **NOT** an AI agent.
-
-This project is **NOT** a CRM.
-
-This project is **NOT** an automation platform.
-
-Its only responsibility is to analyze a public business website and produce the highest-quality structured business profile possible **without using any LLM**.
-
-The output JSON will later be consumed by another system that performs AI analysis.
-
-Therefore, everything in this project must be deterministic, explainable, and lightweight.
-
----
-
-# Primary Goal
-
-Given a URL like
-
-https://company.com
-
-produce a compact, normalized business intelligence JSON.
-
-Never return HTML.
-
-Never return Markdown.
-
-Never call OpenAI, Anthropic, Gemini or any other LLM.
-
----
-
-# Existing V1
-
-The project already has
+The project already has:
 
 * FastAPI
 * Crawl4AI
+* Parallel crawling
 * Page selection
-* Basic extraction
+* Multiple extractors
 * JSON response
+* Confidence scoring
 
-Improve the existing architecture instead of replacing it.
+Do NOT rewrite the project.
 
-Keep backwards compatibility whenever practical.
+Improve the existing implementation.
+
+The primary objective of this iteration is **data quality**, **crawl performance**, and **lead intelligence**.
+
+The goal is NOT to crawl more pages.
+
+The goal is to return **higher quality business information**.
 
 ---
 
-# Overall Pipeline
+# Highest Priority
 
-```
-Input URL
+Improve the quality of extracted business information.
 
-↓
+False positives are worse than missing information.
 
-Normalize URL
+Never return system-generated values as business information.
 
-↓
+Always prefer fewer high-confidence results over many low-quality results.
 
-Extract Root Domain
+---
 
-↓
+# Task 1 — Email Quality Engine
 
-robots.txt (optional)
+Current problem:
 
-↓
+The crawler extracts emails like
 
-sitemap.xml (if available)
-
-↓
-
-Homepage Crawl
-
-↓
-
-Navigation Discovery
-
-↓
-
-Internal Link Collection
-
-↓
-
-Page Ranking
-
-↓
-
-Page Classification
-
-↓
-
-Parallel Crawl
-
-↓
-
-Specialized Extractors
-
-↓
-
-Merge
-
-↓
-
-Normalization
-
-↓
-
-Confidence Scoring
-
-↓
-
-Business Profile JSON
+```text
+xxxxx@sentry.wixpress.com
+xxxxx@sentry-next.wixpress.com
 ```
 
+These are not business emails.
+
+Build an Email Quality Engine.
+
+Every email must be classified.
+
+Possible categories
+
+Business
+
+Support
+
+Sales
+
+Marketing
+
+Personal
+
+System
+
+Unknown
+
+Reject emails from common system providers.
+
+Examples
+
+sentry.io
+
+sentry.wixpress.com
+
+sentry-next.wixpress.com
+
+cloudflare.com
+
+googleusercontent.com
+
+example.com
+
+localhost
+
+noreply addresses
+
+hashed addresses
+
+tracking addresses
+
+Build both
+
+Allow List
+
+Block List
+
+Every email should include
+
+Value
+
+Category
+
+Source URL
+
+Confidence
+
+Extraction Method
+
+Ignore Flag
+
+Only business-relevant emails should appear in the final response.
+
 ---
 
-# URL Normalization
+# Task 2 — Phone Quality Engine
 
-Before crawling
+Improve phone extraction.
 
-Convert
+Priority order
 
-https://company.com/about
+1. tel links
 
-↓
+2. JSON-LD
 
-https://company.com
+3. Footer
 
-Remove
+4. Contact Page
 
-* UTM parameters
-* Tracking parameters
-* Fragments
+5. Visible Text
 
-Always crawl from the homepage.
+Normalize every phone number.
 
----
+Remove duplicates.
 
-# Link Discovery
-
-Collect ALL internal links from
-
-Homepage HTML
-
-Do NOT use cleaned markdown.
-
-Parse raw HTML using BeautifulSoup.
-
-Ignore
-
-* mailto
-* tel
-* javascript
-* anchors
-* external domains
+Return confidence score.
 
 ---
 
-# Sitemap Support
+# Task 3 — Smart Page Ranking
 
-Before crawling multiple pages
+Current implementation still crawls blog posts.
 
-Attempt
+Blogs are low priority.
 
-/sitemap.xml
+Page ranking must become smarter.
 
-and
-
-/sitemap_index.xml
-
-If found
-
-Use sitemap URLs to improve page discovery.
-
-Fallback to homepage links if sitemap does not exist.
-
----
-
-# Intelligent Page Ranking
-
-Replace simple keyword matching with a scoring system.
+Score pages.
 
 Example
 
@@ -198,15 +165,15 @@ Services
 
 90
 
-Team
+Treatments
 
-85
+90
 
 Pricing
 
-80
+85
 
-Treatments
+Team
 
 80
 
@@ -214,200 +181,163 @@ Locations
 
 75
 
-Careers
+FAQ
 
-40
-
-Blog
-
--50
-
-Privacy
-
--100
-
-Terms
-
--100
-
-Only crawl the highest-ranked pages.
-
-Maximum pages
-
-10
-
----
-
-# Page Classification
-
-Each crawled page must first be classified.
-
-Possible page types
-
-Homepage
-
-About
-
-Contact
-
-Services
-
-Pricing
-
-Team
-
-Careers
-
-Location
+70
 
 Booking
 
-Unknown
+70
 
-Classification should use
+Blog
 
-* URL
-* Page title
-* Navigation text
-* H1
-* Metadata
+-100
 
-instead of URL only.
+News
 
----
+-100
 
-# Parallel Crawling
+Posts
 
-Homepage is crawled first.
+-100
 
-Remaining pages should be crawled concurrently.
+Privacy
 
-Default concurrency
+-200
 
-5
+Terms
 
-Timeout
+-200
 
-15 seconds
-
-Skip failures.
-
-Never fail the entire request because one page failed.
+Never crawl blogs unless explicitly requested.
 
 ---
 
-# Extractor Architecture
+# Task 4 — Page Classification
 
-Each extractor must be independent.
+Do not classify pages using URL only.
 
-Each extractor receives
+Use
 
-* HTML
-* BeautifulSoup object
-* URL
-* Page Type
+URL
 
-Each extractor returns structured data only.
+Title
 
-No extractor should know about another extractor.
+H1
 
----
+Navigation Text
 
-# Required Extractors
+Meta Description
 
-Implement or improve the following.
+Breadcrumb
 
-## Company Extractor
+Examples
 
-Extract
+"Treatments"
 
-Company Name
+should become
 
-Description
+Services Page
 
-Tagline
+"Meet Our Team"
 
-Industry
+should become
 
-Mission
+Team Page
 
-About Summary
+"Get in Touch"
 
----
+should become
 
-## Email Extractor
+Contact Page
 
-Extract
-
-Visible emails
-
-mailto links
-
-Schema emails
-
-Footer emails
-
-Normalize
-
-Validate
-
-Remove duplicates
-
-Return confidence score
+Every page must have one page type before extraction begins.
 
 ---
 
-## Phone Extractor
+# Task 5 — Page-Specific Extraction
 
-Extract
+Do NOT run every extractor on every page.
 
-Visible numbers
+Create an Extraction Router.
 
-tel links
+Homepage
 
-Schema numbers
+Company
 
-Normalize to E164 where possible
+Technology
 
-Remove duplicates
+Navigation
 
-Return confidence score
+Metadata
 
----
+Contact
 
-## Address Extractor
+Emails
 
-Extract
+Phones
 
-Street
-
-City
-
-Region
-
-Postal Code
-
-Country
-
-Coordinates if available
+Address
 
 Opening Hours
 
-Google Maps Embed
+Forms
 
-Schema Address
+About
 
----
+Company Summary
 
-## Team Extractor
+History
 
-Extract
+Mission
+
+Team
 
 People
 
-Role
+Roles
 
-Title
+Qualifications
+
+Profile Links
+
+Services
+
+Treatments
+
+Products
+
+Pricing
+
+Booking
+
+Footer
+
+Registration
+
+VAT
+
+Social Links
+
+Contact Info
+
+Only execute extractors that make sense for that page type.
+
+---
+
+# Task 6 — Team Extraction
+
+Current implementation returns empty team arrays.
+
+Improve extraction.
+
+Detect repeating profile cards.
+
+Extract
+
+Name
+
+Role
 
 Qualifications
 
@@ -415,449 +345,343 @@ Profile URL
 
 Image URL
 
-Avoid extracting random headings.
+Bio (if available)
 
-Recognize repeated profile cards.
+Ignore navigation items.
 
----
-
-## Service Extractor
-
-Extract
-
-Services
-
-Products
-
-Treatments
-
-Solutions
-
-Offerings
-
-Do not include navigation labels.
+Ignore headings that are not people.
 
 ---
 
-## Contact Extractor
+# Task 7 — Service Extraction
 
-Detect
+Current implementation extracts marketing headlines.
 
-Contact Form
-
-Booking Form
-
-Newsletter
-
-Live Chat
-
-WhatsApp Button
-
-Online Booking
-
-Contact Preference
-
----
-
-## Social Extractor
-
-Extract
-
-LinkedIn
-
-Facebook
-
-Instagram
-
-Twitter/X
-
-YouTube
-
-TikTok
-
-GitHub
-
-Normalize URLs.
-
----
-
-## Technology Extractor
-
-Detect
-
-CMS
-
-Analytics
-
-Pixels
-
-CRM
-
-Chat Widget
-
-Booking System
-
-Payment Provider
-
-Framework
-
-Hosting hints
+Instead extract actual services.
 
 Examples
 
-WordPress
+Dental Implants
 
-Squarespace
+Root Canal
 
-Shopify
+Invisalign
 
-HubSpot
+Teeth Whitening
 
-Calendly
+Emergency Dentist
 
-Stripe
+Do not extract hero text.
 
-Intercom
+Do not extract advertisements.
 
-Zendesk
+Prefer
 
-Cloudflare
+Service Cards
 
-Google Analytics
+Navigation
 
-Google Tag Manager
+Treatment Lists
 
-Meta Pixel
-
----
-
-## Metadata Extractor
-
-Extract
-
-Title
-
-Meta Description
-
-OpenGraph
-
-Twitter Card
-
-Canonical
-
-Language
+Pricing Tables
 
 ---
 
-## Schema Extractor
+# Task 8 — Contact Information
 
-Parse JSON-LD
+Improve contact discovery.
 
-Extract
-
-Organization
-
-LocalBusiness
-
-Dentist
-
-MedicalBusiness
-
-Person
-
-PostalAddress
-
-OpeningHours
-
-Email
-
-Telephone
-
-Logo
-
-SameAs
-
----
-
-## Footer Extractor
-
-Explicitly inspect
-
-<footer>
-
-Extract
-
-Email
-
-Phone
-
-Address
-
-Company Registration
-
-VAT Number
-
-Social Links
-
-Copyright
-
----
-
-# Confidence Engine
-
-Every extracted value should contain
-
-Value
-
-Source URL
-
-Extraction Method
-
-Confidence Score
-
-Example
-
-```
-{
-    "email": "info@company.com",
-    "source": "/contact",
-    "method": "mailto",
-    "confidence": 0.99
-}
-```
-
-Confidence priority
-
-Schema
-
-↓
-
-mailto/tel
-
-↓
+Search
 
 Footer
 
-↓
+Header
 
-Visible Text
+Contact Page
 
-↓
+JSON-LD
 
-Regex
+mailto
 
----
+tel
 
-# Business Intelligence Layer
+Google Maps Embed
 
-After extraction
+Business Schema
 
-Compute deterministic feature flags
-
-Examples
-
-Has Contact Form
-
-Has Booking
-
-Has Live Chat
-
-Has Multiple Locations
-
-Has Team Page
-
-Has Pricing
-
-Has FAQ
-
-Has Careers
-
-Has WhatsApp
-
-Has Social Presence
-
-Has Analytics
-
-Has CRM
-
-Has Marketing Pixels
-
-These are simple booleans.
-
-Do NOT use AI.
-
----
-
-# Normalization
-
-Merge duplicates.
-
-Prefer highest-confidence values.
-
-Normalize
+Return
 
 Emails
 
 Phones
 
-Addresses
+Address
 
-Social Links
+Opening Hours
 
-Services
+Google Maps URL
 
-Technologies
+Contact Form
+
+Booking Form
 
 ---
 
-# Response Schema
+# Task 9 — Technology Detection
 
-Return a business-centric JSON.
+Expand technology detection.
 
-Not a crawl-centric JSON.
+Current detection
+
+CMS
+
+Analytics
+
+Widgets
+
+Add
+
+CRM
+
+HubSpot
+
+Salesforce
+
+Zoho
+
+Booking
+
+Calendly
+
+TidyCal
+
+Wix Booking
+
+SimplyBook
+
+Payments
+
+Stripe
+
+PayPal
+
+Square
+
+Chat
+
+Intercom
+
+Zendesk
+
+Drift
+
+Crisp
+
+Tawk.to
+
+Marketing
+
+Google Ads
+
+Meta Pixel
+
+Hotjar
+
+Microsoft Clarity
+
+Cookiebot
+
+Cloudflare
+
+Framework
+
+Next.js
+
+React
+
+Vue
+
+Laravel
+
+WordPress
+
+Squarespace
+
+Wix
+
+Shopify
+
+---
+
+# Task 10 — Confidence Engine
+
+Replace one overall confidence score.
+
+Score each section independently.
 
 Example
 
-```
+Company
+
+Contacts
+
+Services
+
+Technology
+
+Team
+
+Social
+
+Address
+
+Every field should contain
+
+Value
+
+Confidence
+
+Source URL
+
+Extraction Method
+
+---
+
+# Task 11 — Crawl Performance
+
+Current crawl time
+
+60–70 seconds
+
+Target
+
+10–15 seconds
+
+Investigate
+
+Sequential crawling
+
+JavaScript wait time
+
+Images
+
+Fonts
+
+Videos
+
+Unused assets
+
+Optimize browser settings.
+
+Use concurrent crawling.
+
+Skip unnecessary resources.
+
+---
+
+# Task 12 — Business Intelligence Output
+
+The response should describe the BUSINESS.
+
+Not the crawl.
+
+Current response contains debugging information.
+
+Create two response modes.
+
+Default
+
+Business Profile
+
+Debug
+
+Business Profile
+
+*
+
+Crawl Details
+
+*
+
+URLs
+
+*
+
+Timing
+
+Production mode should hide implementation details.
+
+---
+
+# Desired Business Profile
+
+The final response should resemble
+
 {
-  "website": "...",
+"company": {},
 
-  "company": {
-    "name": "...",
-    "description": "...",
-    "industry": "...",
-    "tagline": "...",
-    "confidence": 0.99
-  },
+"contacts": {},
 
-  "contacts": {
-    "emails": [],
-    "phones": [],
-    "address": {},
-    "opening_hours": {},
-    "contact_form": true
-  },
+"address": {},
 
-  "team": [],
+"team": [],
 
-  "services": [],
+"services": [],
 
-  "technology": {},
+"technology": {},
 
-  "social": {},
+"social": {},
 
-  "features": {
-    "has_booking": true,
-    "has_live_chat": false,
-    "has_pricing": true,
-    "has_team_page": true,
-    "has_multiple_locations": false
-  },
+"features": {},
 
-  "crawl": {
-    "pages_scanned": 6,
-    "crawl_time_ms": 8000
-  }
+"confidence": {}
 }
-```
+
+Every section should contain structured information.
+
+Never return raw HTML.
+
+Never return Markdown.
+
+Never return random headings.
+
+Never return duplicate values.
 
 ---
 
-# Coding Standards
+# Coding Requirements
 
-Use
+Improve the existing architecture.
 
-Python 3.12
+Do not rewrite working components.
 
-FastAPI
+Keep FastAPI routes unchanged.
 
-Async
+Keep API compatibility.
 
-Type hints
+Use SOLID principles.
 
-Pydantic
+Keep modules small.
 
-Structured logging
+Every extractor must remain independent.
 
-Small reusable modules
+Every improvement should be unit-testable.
 
-No global mutable state.
-
-No duplicated logic.
-
-No giant functions.
-
-No giant classes.
-
-Follow SOLID principles.
-
-Keep modules focused and testable.
+Avoid duplicated logic.
 
 ---
 
-# Performance Targets
+# Acceptance Criteria
 
-Homepage crawl
+The implementation is successful when
 
-<3 seconds
-
-Total crawl
-
-<10 seconds for typical business websites
-
-Maximum pages
-
-10
-
-Memory
-
-<500MB
-
----
-
-# Error Handling
-
-Never silently ignore failures.
-
-Log meaningful errors.
-
-Continue processing if one page fails.
-
-Always return valid JSON.
-
----
-
-# Backward Compatibility
-
-Do not remove existing API endpoints.
-
-Improve them.
-
-Keep the current frontend working.
-
----
-
-# Out of Scope
-
-Do NOT implement
-
-* LLM calls
-* AI scoring
-* Database
-* Authentication
-* Redis
-* Celery
-* RabbitMQ
-* Kafka
-* Vector database
-* Email sending
-* CRM
-* n8n integration
-* Webhooks
-* Batch processing
-
----
-
-# Success Criteria
-
-The implementation is complete when the API can analyze a typical small-business website and reliably produce a high-quality, normalized business profile containing company details, contact information, team members, services, technologies, social links, feature flags, and confidence scores—all without using any LLM and with a response time suitable for interactive use.
+* False system emails are eliminated.
+* Business emails have high confidence.
+* Blog pages are no longer crawled by default.
+* Team members are extracted correctly.
+* Services contain real offerings instead of marketing slogans.
+* Contact information is significantly more accurate.
+* Page classification is content-aware instead of URL-only.
+* Crawl time is reduced substantially through optimized crawling.
+* Production JSON represents a clean business profile suitable for downstream AI analysis.
+* Existing API endpoints and frontend continue to work without breaking changes.

@@ -8,6 +8,7 @@ Each extractor receives (html, soup, url) and returns structured data.
 This module has NO knowledge of how results are merged across pages.
 
 Phase 2: Now includes page classification and feature detection.
+Phase 4+: Includes email quality filtering.
 """
 
 import logging
@@ -16,6 +17,7 @@ from bs4 import BeautifulSoup
 from app.crawler import CrawledPage
 from app.page_classifier import classify_page
 from app.feature_detector import detect_all_features
+from app.email_quality_engine import get_verified_business_emails
 from app.extractors.email import extract_emails
 from app.extractors.phone import extract_phones
 from app.extractors.social import extract_social_links
@@ -60,6 +62,13 @@ def extract_from_page(page: CrawledPage) -> dict:
     logger.info("Detecting features on: %s", page.url)
     features = detect_all_features(page.html)
 
+    # Extract all raw data
+    raw_emails = extract_emails(page.html, soup, page.url)
+
+    # Phase 4+: Filter emails with quality engine
+    verified_emails = get_verified_business_emails(raw_emails)
+    logger.info("  → Found %d emails, %d verified as business-relevant", len(raw_emails), len(verified_emails))
+
     return {
         "url": page.url,
         "page_classification": {
@@ -69,7 +78,7 @@ def extract_from_page(page: CrawledPage) -> dict:
             "content_score": page_class["content_score"],
         },
         "features": features,
-        "emails": extract_emails(page.html, soup, page.url),
+        "emails": verified_emails,  # Use quality-filtered emails
         "phones": extract_phones(page.html, soup, page.url),
         "social": extract_social_links(page.html, soup, page.url),
         "metadata": extract_metadata(page.html, soup, page.url),

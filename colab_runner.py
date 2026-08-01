@@ -197,12 +197,55 @@ async def main():
                 print(f"✅ Analysis successful for: {result['url']}")
                 print(f"📊 Pages scanned: {result['pages_scanned']}")
                 print(f"⏱️  Crawl time: {result['crawl_time_ms']}ms")
-                print("\n📋 Extracted Data:")
-                # Convert response object to dict if needed
-                data = result["data"]
-                if hasattr(data, "model_dump"):
-                    data = data.model_dump()
-                print(json.dumps(data, indent=2, default=str))
+
+                # Extract Phase 4 business-centric data
+                response = result["data"]
+                if hasattr(response, "model_dump"):
+                    response = response.model_dump()
+
+                # Display summary (Phase 4)
+                print("\n📋 Business Summary:")
+                if "summary" in response:
+                    summary = response["summary"]
+                    print(f"   Business: {summary.get('business_name', 'N/A')}")
+                    print(f"   Quality Score: {summary.get('data_quality_score', 0):.0%}")
+                    if summary.get("key_features"):
+                        print(f"   Key Features: {', '.join(summary['key_features'][:3])}")
+                else:
+                    print("   (Summary data not available)")
+
+                # Display presence (Phase 4)
+                print("\n📞 Online Presence:")
+                if "presence" in response:
+                    presence = response["presence"]
+                    contacts = presence.get("verified_contacts", [])
+                    if contacts:
+                        for contact in contacts:
+                            print(f"   {contact.get('type', 'contact').title()}: {contact.get('value')} (confidence: {contact.get('confidence', 0):.0%})")
+                    social = presence.get("social_profiles", {})
+                    if social:
+                        for platform, url in list(social.items())[:3]:
+                            print(f"   {platform.title()}: {url}")
+                else:
+                    print("   (Presence data not available)")
+
+                # Display capabilities (Phase 4)
+                print("\n⚙️  Capabilities:")
+                if "capabilities" in response:
+                    capabilities = response["capabilities"]
+                    services = capabilities.get("services", [])
+                    if services:
+                        print(f"   Services: {', '.join(services[:3])}")
+                    features = capabilities.get("features", {})
+                    enabled_features = [k.replace("has_", "") for k, v in features.items() if v]
+                    if enabled_features:
+                        print(f"   Features: {', '.join(enabled_features[:5])}")
+                else:
+                    print("   (Capabilities data not available)")
+
+                # Full JSON output
+                print("\n📄 Full Response (JSON):")
+                print(json.dumps(response, indent=2, default=str))
             else:
                 print(f"❌ Analysis failed")
                 print(f"   Error: {result.get('error', 'Unknown error')}")
