@@ -21,6 +21,7 @@ from app.models.response import (
     TechnologyStack,
     SEOInfo,
     PagesFound,
+    FeatureFlags,
     CrawlMeta,
 )
 from app.constants.keywords import IMPORTANT_SLUGS
@@ -202,6 +203,37 @@ def _merge_pages_found(page_results: list[dict], homepage_url: str) -> PagesFoun
     )
 
 
+def _merge_features(page_results: list[dict]) -> FeatureFlags:
+    """
+    Phase 2: Merge and aggregate feature flags across pages.
+
+    Returns True if feature is found on ANY page.
+    """
+    merged_features = {
+        "has_contact_form": False,
+        "has_booking": False,
+        "has_live_chat": False,
+        "has_pricing": False,
+        "has_team_page": False,
+        "has_faq": False,
+        "has_careers": False,
+        "has_whatsapp": False,
+        "has_analytics": False,
+        "has_crm": False,
+        "has_marketing_pixels": False,
+        "has_social_links": False,
+        "has_multiple_locations": False,
+    }
+
+    for page in page_results:
+        features = page.get("features", {})
+        for key in merged_features:
+            if features.get(key, False):
+                merged_features[key] = True
+
+    return FeatureFlags(**merged_features)
+
+
 def merge(
     website_url: str,
     page_results: list[dict],
@@ -210,6 +242,8 @@ def merge(
 ) -> WebsiteIntelligenceResponse:
     """
     Merge all per-page extraction results into the final API response.
+
+    Phase 2: Now includes page classification and feature flags.
 
     Args:
         website_url: The original analyzed URL.
@@ -231,6 +265,7 @@ def merge(
         technology=_merge_technology(page_results),
         seo=_merge_seo(page_results),
         pages=_merge_pages_found(page_results, website_url),
+        features=_merge_features(page_results),
         crawl=CrawlMeta(
             pages_scanned=pages_scanned,
             crawl_time_ms=crawl_time_ms,

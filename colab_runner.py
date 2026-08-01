@@ -38,6 +38,8 @@ if sys.platform == "win32":
 # Import application modules
 from app.config import settings
 from app.utils import normalize_url, validate_url
+from app.url_handler import extract_root_domain
+from app.sitemap_discovery import get_sitemap_urls
 from app.crawler import crawl_page, crawl_pages
 from app.page_selector import extract_internal_links, filter_important_pages
 from app.extractor import extract_from_pages
@@ -96,12 +98,25 @@ async def analyze_website(url: str) -> dict:
         logger.info("✓ Homepage crawled successfully")
 
         # ── Step 3: Find important pages ──────────────────────────────────
+        root_domain = extract_root_domain(normalized)
+        logger.info("Discovering important pages from: %s", root_domain)
+
+        # Try to get URLs from sitemap first
+        logger.info("Attempting to discover pages from sitemap...")
+        sitemap_urls = await get_sitemap_urls(root_domain, timeout=settings.timeout_seconds)
+
+        # Also extract links from homepage
         logger.info("Extracting internal links...")
         internal_links = extract_internal_links(homepage.html, normalized)
         logger.info("Found %d internal links", len(internal_links))
 
+        # Combine sitemap URLs with internal links (deduplicate)
+        all_candidate_urls = list(set(sitemap_urls) | set(internal_links))
+        logger.info("Discovered %d candidate pages (from sitemap + homepage links)", len(all_candidate_urls))
+
+        # Rank and filter to important pages
         logger.info("Filtering to important pages...")
-        important_urls = filter_important_pages(internal_links, max_pages=settings.max_pages)
+        important_urls = filter_important_pages(all_candidate_urls, max_pages=settings.max_pages)
         logger.info("Found %d important page(s) to crawl", len(important_urls))
 
         # ── Step 4: Crawl important pages ─────────────────────────────────

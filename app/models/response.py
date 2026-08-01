@@ -52,6 +52,24 @@ class PagesFound(BaseModel):
     contact: bool = False
 
 
+class FeatureFlags(BaseModel):
+    """Phase 2: Business-critical features detected on website."""
+
+    has_contact_form: bool = False
+    has_booking: bool = False
+    has_live_chat: bool = False
+    has_pricing: bool = False
+    has_team_page: bool = False
+    has_faq: bool = False
+    has_careers: bool = False
+    has_whatsapp: bool = False
+    has_analytics: bool = False
+    has_crm: bool = False
+    has_marketing_pixels: bool = False
+    has_social_links: bool = False
+    has_multiple_locations: bool = False
+
+
 class CrawlMeta(BaseModel):
     pages_scanned: int = 0
     crawl_time_ms: int = 0
@@ -68,4 +86,5 @@ class WebsiteIntelligenceResponse(BaseModel):
     technology: TechnologyStack = Field(default_factory=TechnologyStack)
     seo: SEOInfo = Field(default_factory=SEOInfo)
     pages: PagesFound = Field(default_factory=PagesFound)
+    features: FeatureFlags = Field(default_factory=FeatureFlags)
     crawl: CrawlMeta = Field(default_factory=CrawlMeta)

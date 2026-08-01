@@ -6,12 +6,16 @@ and returns the aggregated raw results.
 
 Each extractor receives (html, soup, url) and returns structured data.
 This module has NO knowledge of how results are merged across pages.
+
+Phase 2: Now includes page classification and feature detection.
 """
 
 import logging
 from bs4 import BeautifulSoup
 
 from app.crawler import CrawledPage
+from app.page_classifier import classify_page
+from app.feature_detector import detect_all_features
 from app.extractors.email import extract_emails
 from app.extractors.phone import extract_phones
 from app.extractors.social import extract_social_links
@@ -29,13 +33,17 @@ def extract_from_page(page: CrawledPage) -> dict:
     """
     Run all extractors against a single crawled page.
 
+    Phase 2: Also includes page classification and feature detection.
+
     Args:
         page: A successfully crawled page with html content.
 
     Returns:
-        Dictionary containing raw results from every extractor.
-        Keys: emails, phones, social, metadata, company, services,
-              forms, technology, schema, url.
+        Dictionary containing raw results from every extractor plus:
+        - page_classification: Page type and confidence
+        - features: Feature flags (has_booking, has_live_chat, etc.)
+        Keys: url, page_classification, features, emails, phones, social,
+              metadata, company, services, forms, technology, schema.
     """
     if not page.success or not page.html:
         logger.warning("Skipping extraction for failed page: %s", page.url)
@@ -43,8 +51,24 @@ def extract_from_page(page: CrawledPage) -> dict:
 
     soup = BeautifulSoup(page.html, "lxml")
 
+    # Phase 2: Page Classification
+    logger.info("Classifying page: %s", page.url)
+    page_class = classify_page(page.url, page.html)
+    logger.info("  → Type: %s (confidence: %.0f%%)", page_class["type"], page_class["confidence"] * 100)
+
+    # Phase 2: Feature Detection
+    logger.info("Detecting features on: %s", page.url)
+    features = detect_all_features(page.html)
+
     return {
         "url": page.url,
+        "page_classification": {
+            "type": page_class["type"],
+            "confidence": page_class["confidence"],
+            "url_score": page_class["url_score"],
+            "content_score": page_class["content_score"],
+        },
+        "features": features,
         "emails": extract_emails(page.html, soup, page.url),
         "phones": extract_phones(page.html, soup, page.url),
         "social": extract_social_links(page.html, soup, page.url),
