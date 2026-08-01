@@ -33,8 +33,8 @@ from app.url_handler import extract_root_domain
 from app.sitemap_discovery import get_sitemap_urls
 from app.crawler import crawl_page, crawl_pages
 from app.page_selector import extract_internal_links, filter_important_pages
-from app.extractor import extract_from_pages
-from app.merger import merge
+from app.evidence_extractor import PageEvidenceExtractor
+from app.evidence_aggregator import EvidenceAggregator
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -108,16 +108,16 @@ async def index():
 @app.post("/analyze", tags=["Intelligence"])
 async def analyze(request: AnalyzeRequest):
     """
-    Analyze a website and return structured business intelligence.
+    Analyze a website and collect structured evidence.
 
     Pipeline:
       1. Validate + normalize URL
       2. Crawl homepage
       3. Extract + filter important internal links
       4. Crawl important pages concurrently
-      5. Run all extractors over every page
-      6. Merge + deduplicate results
-      7. Return normalized JSON
+      5. Extract evidence from each page
+      6. Aggregate evidence by page type
+      7. Return JSON for LLM processing
     """
     start_ms = time.monotonic()
 
@@ -131,7 +131,7 @@ async def analyze(request: AnalyzeRequest):
             content=ErrorResponse(error="Invalid URL", details=error_msg).model_dump(),
         )
 
-    logger.info("Starting analysis for: %s", normalized)
+    logger.info("Starting evidence collection for: %s", normalized)
 
     # ── Step 2: Crawl homepage ─────────────────────────────────────────────
     homepage = await crawl_page(normalized, timeout=settings.timeout_seconds)
@@ -172,23 +172,24 @@ async def analyze(request: AnalyzeRequest):
     )
 
     all_pages = [homepage] + additional_pages
-    pages_scanned = sum(1 for p in all_pages if p.success)
 
-    # ── Step 5: Extract data ──────────────────────────────────────────────
-    page_results = extract_from_pages(all_pages)
+    # ── Step 5: Extract evidence from each page ───────────────────────────
+    logger.info("Extracting evidence from %d crawled page(s)...", len(all_pages))
+    aggregator = EvidenceAggregator(normalized)
 
-    # ── Step 6: Merge results ─────────────────────────────────────────────
+    for page in all_pages:
+        extractor = PageEvidenceExtractor(page)
+        evidence = extractor.extract()
+        if evidence:
+            aggregator.add_page_evidence(evidence)
+
+    # ── Step 6: Build response ────────────────────────────────────────────
     crawl_time_ms = int((time.monotonic() - start_ms) * 1000)
-    response = merge(
-        website_url=normalized,
-        page_results=page_results,
-        pages_scanned=pages_scanned,
-        crawl_time_ms=crawl_time_ms,
-    )
+    response = aggregator.build_response(crawl_time_ms)
 
     logger.info(
-        "Analysis complete for %s — %d page(s) in %dms",
-        normalized, pages_scanned, crawl_time_ms,
+        "Evidence collection complete for %s — %d page(s) extracted in %dms",
+        normalized, aggregator.pages_extracted, crawl_time_ms,
     )
 
     return response
