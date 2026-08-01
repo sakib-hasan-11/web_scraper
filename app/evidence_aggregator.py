@@ -21,6 +21,7 @@ from app.models.evidence import (
     EvidenceItem,
     ScriptEvidence,
 )
+from app.evidence_cleaner import EvidenceCleaner
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,10 @@ class EvidenceAggregator:
                 discovery_method="sitemap + homepage crawl + internal links",
             ),
         )
+
+        # Clean evidence
+        cleaner = EvidenceCleaner()
+        response = cleaner.clean_response(response)
 
         logger.info("Built response with %d pages (scanned: %d)", self.pages_extracted, self.pages_scanned)
 

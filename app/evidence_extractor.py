@@ -551,12 +551,19 @@ class PageEvidenceExtractor:
         schemas = extract_schema(self.html, self.soup, self.url)
         evidence = []
 
-        for schema_type, data in schemas.items():
-            if data:
+        # extract_schema() returns a list of schema dicts
+        for schema_dict in schemas:
+            if schema_dict:
+                # Get schema type from @type field
+                schema_type = schema_dict.get("@type", "unknown")
+                if isinstance(schema_type, list):
+                    schema_type = schema_type[0]  # Use first type if list
+                schema_type = str(schema_type).lower()
+
                 evidence.append(
                     SchemaEvidence(
                         schema_type=schema_type,
-                        data=data,
+                        data=schema_dict,
                         source=self.url,
                     )
                 )
@@ -666,10 +673,19 @@ class PageEvidenceExtractor:
         Returns:
             Page type string (homepage|about|contact|services|team|pricing|locations|faq|booking|unknown)
         """
+        from urllib.parse import urlparse
+        
         url_lower = self.url.lower()
-
-        # Homepage detection
-        if url_lower.endswith("/") or url_lower.endswith("index.html"):
+        
+        # Homepage detection - Check if URL is just domain (with or without trailing slash)
+        parsed = urlparse(url_lower)
+        path = parsed.path.rstrip("/")
+        
+        if not path or path == "":
+            # No path = homepage (root domain)
+            return "homepage"
+        
+        if url_lower.endswith("index.html"):
             return "homepage"
 
         # URL-based detection

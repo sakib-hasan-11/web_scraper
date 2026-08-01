@@ -1,17 +1,17 @@
 """
-Colab terminal-based runner for Website Intelligence Service.
+Terminal-based runner for Website Intelligence Service V3.
 
 Accepts user URL input from terminal (no frontend, no server).
-Processes URLs directly and returns structured intelligence as JSON.
+Processes URLs directly and returns structured evidence as JSON.
 
-Pipeline:
+V3 Pipeline (Evidence Collection):
   1. Validate + normalize URL
   2. Crawl homepage
   3. Extract + filter important internal links
   4. Crawl important pages concurrently
-  5. Run all extractors over every page
-  6. Merge + deduplicate results
-  7. Return normalized JSON
+  5. Extract evidence from each page (NEW: V3)
+  6. Aggregate evidence by page type (NEW: V3)
+  7. Return evidence JSON (no business interpretation)
 
 Usage:
     python colab_runner.py
@@ -42,28 +42,28 @@ from app.url_handler import extract_root_domain
 from app.sitemap_discovery import get_sitemap_urls
 from app.crawler import crawl_page, crawl_pages
 from app.page_selector import extract_internal_links, filter_important_pages
-from app.extractor import extract_from_pages
-from app.merger import merge
+from app.evidence_extractor import PageEvidenceExtractor
+from app.evidence_aggregator import EvidenceAggregator
 
 
 async def analyze_website(url: str) -> dict:
     """
-    Analyze a website and return structured intelligence.
+    Analyze a website and collect structured evidence (V3).
 
-    Pipeline:
+    V3 Pipeline:
       1. Validate + normalize URL
       2. Crawl homepage
       3. Extract + filter important internal links
       4. Crawl important pages concurrently
-      5. Run all extractors over every page
-      6. Merge + deduplicate results
-      7. Return normalized JSON
+      5. Extract evidence from each page (NEW)
+      6. Aggregate evidence by page type (NEW)
+      7. Return evidence JSON
 
     Args:
         url: The website URL to analyze
 
     Returns:
-        Dictionary with extracted intelligence or error information
+        Dictionary with extracted evidence or error information
     """
     start_ms = time.monotonic()
 
@@ -80,7 +80,7 @@ async def analyze_website(url: str) -> dict:
                 "url": url,
             }
 
-        logger.info("Starting analysis for: %s", normalized)
+        logger.info("Starting evidence collection for: %s", normalized)
 
         # ── Step 2: Crawl homepage ────────────────────────────────────────
         logger.info("Crawling homepage...")
@@ -127,33 +127,33 @@ async def analyze_website(url: str) -> dict:
         )
 
         all_pages = [homepage] + additional_pages
-        pages_scanned = sum(1 for p in all_pages if p.success)
-        logger.info("✓ Crawled %d pages total (%d successful)", len(all_pages), pages_scanned)
+        logger.info("✓ Crawled %d pages total", len(all_pages))
 
-        # ── Step 5: Extract data ──────────────────────────────────────────
-        logger.info("Extracting structured data from pages...")
-        page_results = extract_from_pages(all_pages)
-        logger.info("✓ Extracted data from %d page(s)", len(page_results))
+        # ── Step 5: Extract evidence from each page (V3 NEW) ───────────────
+        logger.info("Extracting evidence from pages (V3)...")
+        aggregator = EvidenceAggregator(normalized)
 
-        # ── Step 6: Merge results ─────────────────────────────────────────
-        logger.info("Merging and deduplicating results...")
+        for page in all_pages:
+            if page.success:
+                extractor = PageEvidenceExtractor(page)
+                evidence = extractor.extract()
+                if evidence:
+                    aggregator.add_page_evidence(evidence)
+
+        # ── Step 6: Build response (V3 NEW) ───────────────────────────────
         crawl_time_ms = int((time.monotonic() - start_ms) * 1000)
-        response = merge(
-            website_url=normalized,
-            page_results=page_results,
-            pages_scanned=pages_scanned,
-            crawl_time_ms=crawl_time_ms,
-        )
+        response = aggregator.build_response(crawl_time_ms)
 
         logger.info(
-            "Analysis complete for %s — %d page(s) in %dms",
-            normalized, pages_scanned, crawl_time_ms,
+            "Evidence collection complete for %s — %d page(s) extracted in %dms",
+            normalized, aggregator.pages_extracted, crawl_time_ms,
         )
 
         return {
             "success": True,
             "url": normalized,
-            "pages_scanned": pages_scanned,
+            "pages_scanned": aggregator.pages_scanned,
+            "pages_extracted": aggregator.pages_extracted,
             "crawl_time_ms": crawl_time_ms,
             "data": response,
         }
@@ -169,9 +169,9 @@ async def analyze_website(url: str) -> dict:
 
 
 async def main():
-    """Main terminal loop for Colab."""
+    """Main terminal loop."""
     print("\n" + "=" * 70)
-    print(f"  {settings.app_name} v{settings.app_version}")
+    print(f"  {settings.app_name} v{settings.app_version} — Evidence Collection Engine (V3)")
     print("=" * 70)
     print("\n📍 Enter website URLs to analyze (one per line)")
     print("⚠️  Type 'exit' or 'quit' to stop\n")
@@ -194,57 +194,82 @@ async def main():
             # Display results
             print("\n" + "-" * 70)
             if result["success"]:
-                print(f"✅ Analysis successful for: {result['url']}")
+                print(f"✅ Evidence collection successful for: {result['url']}")
                 print(f"📊 Pages scanned: {result['pages_scanned']}")
+                print(f"📄 Pages extracted: {result['pages_extracted']}")
                 print(f"⏱️  Crawl time: {result['crawl_time_ms']}ms")
 
-                # Extract Phase 4 business-centric data
+                # Convert response to dict if needed
                 response = result["data"]
                 if hasattr(response, "model_dump"):
                     response = response.model_dump()
 
-                # Display summary (Phase 4)
-                print("\n📋 Business Summary:")
-                if "summary" in response:
-                    summary = response["summary"]
-                    print(f"   Business: {summary.get('business_name', 'N/A')}")
-                    print(f"   Quality Score: {summary.get('data_quality_score', 0):.0%}")
-                    if summary.get("key_features"):
-                        print(f"   Key Features: {', '.join(summary['key_features'][:3])}")
-                else:
-                    print("   (Summary data not available)")
+                # Display V3 evidence-based summary
+                print("\n📋 Evidence Found:")
+                
+                if response.get("homepage"):
+                    print("   ✓ Homepage evidence extracted")
+                    homepage = response["homepage"]
+                    if homepage.get("emails"):
+                        print(f"     - {len(homepage['emails'])} email(s)")
+                    if homepage.get("phones"):
+                        print(f"     - {len(homepage['phones'])} phone(s)")
+                    if homepage.get("social_links"):
+                        print(f"     - {len(homepage['social_links'])} social link(s)")
 
-                # Display presence (Phase 4)
-                print("\n📞 Online Presence:")
-                if "presence" in response:
-                    presence = response["presence"]
-                    contacts = presence.get("verified_contacts", [])
-                    if contacts:
-                        for contact in contacts:
-                            print(f"   {contact.get('type', 'contact').title()}: {contact.get('value')} (confidence: {contact.get('confidence', 0):.0%})")
-                    social = presence.get("social_profiles", {})
-                    if social:
-                        for platform, url in list(social.items())[:3]:
-                            print(f"   {platform.title()}: {url}")
-                else:
-                    print("   (Presence data not available)")
+                if response.get("contact"):
+                    print("   ✓ Contact page evidence extracted")
+                    contact = response["contact"]
+                    if contact.get("contact_forms"):
+                        print(f"     - {len(contact['contact_forms'])} contact form(s)")
+                    if contact.get("phones"):
+                        print(f"     - {len(contact['phones'])} phone(s)")
+                    if contact.get("addresses"):
+                        print(f"     - {len(contact['addresses'])} address(es)")
 
-                # Display capabilities (Phase 4)
-                print("\n⚙️  Capabilities:")
-                if "capabilities" in response:
-                    capabilities = response["capabilities"]
-                    services = capabilities.get("services", [])
-                    if services:
-                        print(f"   Services: {', '.join(services[:3])}")
-                    features = capabilities.get("features", {})
-                    enabled_features = [k.replace("has_", "") for k, v in features.items() if v]
-                    if enabled_features:
-                        print(f"   Features: {', '.join(enabled_features[:5])}")
-                else:
-                    print("   (Capabilities data not available)")
+                if response.get("services"):
+                    print("   ✓ Services page evidence extracted")
+                    services = response["services"]
+                    if services.get("headings"):
+                        print(f"     - {len(services['headings'])} heading(s)")
+                    if services.get("cards"):
+                        print(f"     - {len(services['cards'])} card(s)")
+
+                if response.get("team"):
+                    print("   ✓ Team page evidence extracted")
+                    team = response["team"]
+                    if team.get("cards"):
+                        print(f"     - {len(team['cards'])} team card(s)")
+
+                if response.get("technology"):
+                    print(f"   ✓ Technology detected: {len(response['technology'])} tech(s)")
+                    for tech in response["technology"][:5]:
+                        print(f"     - {tech['name']} ({tech['category']})")
+
+                # Display evidence samples
+                print("\n📌 Evidence Samples:")
+                
+                if response.get("homepage") and response["homepage"].get("emails"):
+                    emails = response["homepage"]["emails"][:2]
+                    print("   Emails (with source tracking):")
+                    for email in emails:
+                        print(f"     • {email['value']} (method: {email['method']}, confidence: {email['confidence']:.0%})")
+                
+                if response.get("contact") and response["contact"].get("phones"):
+                    phones = response["contact"]["phones"][:2]
+                    print("   Phones (with source tracking):")
+                    for phone in phones:
+                        print(f"     • {phone['value']} (method: {phone['method']}, confidence: {phone['confidence']:.0%})")
+
+                if response.get("contact") and response["contact"].get("contact_forms"):
+                    forms = response["contact"]["contact_forms"][:1]
+                    print("   Contact Forms:")
+                    for form in forms:
+                        print(f"     • Action: {form['action']}, Method: {form['method']}")
+                        print(f"       Fields: {', '.join(form['input_names'][:3])}")
 
                 # Full JSON output
-                print("\n📄 Full Response (JSON):")
+                print("\n📄 Full Response (V3 Evidence JSON):")
                 print(json.dumps(response, indent=2, default=str))
             else:
                 print(f"❌ Analysis failed")
@@ -262,8 +287,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    print("\n🚀 Starting Website Intelligence Service...")
-    print(f"✓ {settings.app_name} v{settings.app_version}\n")
+    print("\n🚀 Starting Website Intelligence Service V3...")
+    print(f"✓ {settings.app_name} v{settings.app_version} — Evidence Collection Engine\n")
 
     try:
         asyncio.run(main())

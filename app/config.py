@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Centralised configuration for the Website Intelligence Service."""
 
     # Crawling
-    max_pages: int = 10
+    max_pages: int = 6  # MVP: Only crawl 6 pages max (homepage + 5 important pages)
     concurrency: int = 5
     timeout_seconds: int = 15
 

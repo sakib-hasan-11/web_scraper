@@ -28,8 +28,9 @@ class PageScore:
 
 
 # Page type scoring (higher = more important)
-# Negative scores = pages to skip entirely
+# Negative scores = pages to skip entirely (MVP: crawl only meaningful pages)
 PAGE_TYPE_SCORES = {
+    # Crawl these (MVP)
     "contact": 100,
     "about": 95,
     "services": 90,
@@ -37,20 +38,26 @@ PAGE_TYPE_SCORES = {
     "pricing": 80,
     "treatments": 80,
     "locations": 75,
-    "solutions": 75,
-    "products": 70,
-    "careers": 40,
-    "faq": 60,
-    "blog": -100,        # Never crawl blogs
-    "news": -100,        # Never crawl news
-    "posts": -100,       # Never crawl posts
-    "press": -100,       # Never crawl press
-    "privacy": -200,     # Never crawl legal pages
-    "terms": -200,
-    "legal": -200,
-    "cookie": -200,
-    "sitemap": -200,
-    "robots": -200,
+    "faq": 70,
+    "booking": 65,
+    
+    # Skip these (negative scores)
+    "blog": -500,        # Never crawl
+    "news": -500,        # Never crawl
+    "posts": -500,       # Never crawl
+    "author": -500,      # Never crawl author pages
+    "category": -500,    # Never crawl category pages
+    "archives": -500,    # Never crawl archives
+    "tag": -500,         # Never crawl tag pages
+    "search": -500,      # Never crawl search
+    "feed": -500,        # Never crawl feeds
+    "rss": -500,         # Never crawl RSS
+    "privacy": -500,     # Never crawl legal
+    "terms": -500,       # Never crawl legal
+    "legal": -500,       # Never crawl legal
+    "cookie": -500,      # Never crawl legal
+    "sitemap": -500,     # Never crawl
+    "robots": -500,      # Never crawl
 }
 
 # Keywords for each page type
@@ -62,14 +69,22 @@ PAGE_TYPE_KEYWORDS = {
     "pricing": ["pricing", "plans", "costs", "rates", "packages"],
     "treatments": ["treatments", "procedures", "services"],
     "locations": ["locations", "offices", "branches", "our-locations"],
-    "solutions": ["solutions", "products"],
-    "products": ["products"],
-    "careers": ["careers", "jobs", "join-us", "work-with-us"],
-    "blog": ["blog", "news", "articles", "insights", "resources"],
-    "news": ["news", "press-release", "announcements"],
-    "press": ["press", "media"],
+    "faq": ["faq", "frequently-asked", "q&a"],
+    "booking": ["book", "appointment", "schedule", "booking"],
+    
+    # Never crawl
+    "blog": ["blog", "news", "article", "post", "posts", "insight"],
+    "author": ["author", "author-page"],
+    "category": ["category", "categories"],
+    "archives": ["archive", "archives"],
+    "tag": ["tag", "tags"],
+    "search": ["search", "results"],
+    "feed": ["feed", "rss"],
     "privacy": ["privacy", "privacy-policy"],
     "terms": ["terms", "terms-of-service", "legal"],
+    "cookie": ["cookie", "cookies"],
+    "sitemap": ["sitemap"],
+    "robots": ["robots.txt"],
 }
 
 # Words to ignore in URL parsing
